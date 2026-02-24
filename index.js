@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, ActionRowBuilder, StringSelectMenuBuilder, EmbedBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits, ModalBuilder, TextInputBuilder, TextInputStyle, AttachmentBuilder } = require('discord.js');
 const axios = require('axios');
 const { MercadoPagoConfig, Payment } = require('mercadopago');
 const express = require('express');
@@ -8,7 +8,7 @@ const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] 
 });
 
-const mpClient = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN || 'TOKEN_VAZIO' });
+const mpClient = new MercadoPagoConfig({ accessToken: process.env.MP_ACCESS_TOKEN || '' });
 const payment = new Payment(mpClient);
 const app = express();
 app.use(express.json());
@@ -17,88 +17,75 @@ app.use(express.json());
 let carteiras = {}; 
 let codigosGerados = {}; 
 let configBot = {
-    valorPass: parseFloat(process.env.VALOR_PASS) || 10.00,
-    op1: parseFloat(process.env.VALOR_OP1) || 10.00,
-    op2: parseFloat(process.env.VALOR_OP2) || 30.00,
-    op3: parseFloat(process.env.VALOR_OP3) || 50.00,
-    canalFeedback: process.env.LOG_STAFF_CHANNEL || 'ID_DO_CANAL',
-    categoriaTickets: process.env.CATEGORY_TICKETS || 'ID_DA_CATEGORIA'
+    valorPass: 10.00,
+    op1: 10.00, op2: 30.00, op3: 50.00,
+    canalLogs: process.env.LOG_STAFF_CHANNEL,
+    categoriaTickets: process.env.CATEGORY_TICKETS
 };
 
-// --- WEBHOOK ---
-app.post('/webhook', async (req, res) => {
-    const { action, data } = req.body;
-    if (action === "payment.updated" && data.id) {
-        try {
-            const p = await payment.get({ id: data.id });
-            if (p.status === 'approved') {
-                const userId = p.external_reference; 
-                const valor = p.transaction_amount;
-                const user = await client.users.fetch(userId);
-                if (user) {
-                    const codigo = `GT-${Math.random().toString(36).toUpperCase().substring(2, 10)}`;
-                    codigosGerados[codigo] = valor; 
-                    const embed = new EmbedBuilder()
-                        .setTitle("✅ Pagamento Aprovado!")
-                        .setDescription(`Seu código: \`${codigo}\` (R$ ${valor.toFixed(2)})`)
-                        .setColor("#00FF00");
-                    await user.send({ embeds: [embed] }).catch(() => {});
-                }
-            }
-        } catch (e) { console.error("Erro Webhook:", e.message); }
-    }
-    res.sendStatus(200);
-});
-
-app.listen(process.env.PORT || 10000, () => console.log("Servidor Online"));
+app.listen(process.env.PORT || 10000);
 
 // --- COMANDOS ---
 client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
 
-    // COMANDO !perfil
-    if (msg.content.startsWith('!perfil')) {
+    // COMANDO !ADMIN
+    if (msg.content === '!admin' && msg.member.permissions.has(PermissionFlagsBits.Administrator)) {
         setTimeout(() => msg.delete().catch(() => {}), 1000);
-        const uid = msg.content.split(' ')[1];
-        if (!uid) return msg.channel.send("❌ Use: `!perfil [UID]`").then(m => setTimeout(() => m.delete(), 5000));
-
-        try {
-            const res = await axios.get(`https://lhubapi.shardweb.app/player?uid=${uid}`);
-            const embed = new EmbedBuilder()
-                .setTitle("🎮 Perfil Encontrado")
-                .addFields({ name: "👤 Nick", value: `\`${res.data.nickname}\``, inline: true }, { name: "🆔 UID", value: `\`${uid}\``, inline: true })
-                .setColor("#5865F2");
-            msg.channel.send({ embeds: [embed] });
-        } catch { msg.channel.send("❌ UID não encontrado."); }
-    }
-
-    // COMANDO !help
-    if (msg.content === '!help') {
-        setTimeout(() => msg.delete().catch(() => {}), 1000);
+        
         const embed = new EmbedBuilder()
-            .setTitle("❓ Ajuda")
-            .addFields(
-                { name: "👤 Clientes", value: "`!carteira`, `!perfil [UID]`, `!help`" },
-                { name: "🛠️ Admin", value: "`!setloja`, `!config [pass/op1] [valor]`, `!saldo`, `!limpar`" }
-            ).setColor("Blue");
-        msg.channel.send({ embeds: [embed] });
-    }
+            .setTitle("⚙️ GESTÃO ADMINISTRATIVA")
+            .setDescription("Controle total do bot e gerenciamento de saldos.")
+            .setColor("#2b2d31");
 
-    if (!msg.member?.permissions.has(PermissionFlagsBits.Administrator)) return;
-
-    if (msg.content === '!setloja') {
-        setTimeout(() => msg.delete().catch(() => {}), 1000);
-        const embed = new EmbedBuilder().setTitle("🏪 LOJA GT PASS").setDescription("Selecione uma opção:").setColor("#5865F2");
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('btn_loja_comprar').setLabel('Comprar Gift').setStyle(ButtonStyle.Primary),
-            new ButtonBuilder().setCustomId('btn_loja_resgatar_gift').setLabel('Resgatar Gift').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('btn_loja_resgatar_pass').setLabel('Resgatar Passe').setStyle(ButtonStyle.Success)
+        const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('admin_nome').setLabel('Nome').setStyle(ButtonStyle.Secondary).setEmoji('📝'),
+            new ButtonBuilder().setCustomId('admin_avatar').setLabel('Avatar').setStyle(ButtonStyle.Secondary).setEmoji('🖼️'),
+            new ButtonBuilder().setCustomId('admin_gift').setLabel('Gerar Gift').setStyle(ButtonStyle.Success).setEmoji('🎁')
         );
-        msg.channel.send({ embeds: [embed], components: [row] });
+
+        const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('admin_limpar_saldo').setLabel('Zerar Saldo User').setStyle(ButtonStyle.Danger).setEmoji('🧹'),
+            new ButtonBuilder().setCustomId('admin_saldo_lhub').setLabel('Saldo LHub').setStyle(ButtonStyle.Primary).setEmoji('💰')
+        );
+
+        return msg.channel.send({ embeds: [embed], components: [row1, row2] });
     }
 
-    if (msg.content === '!limpar' && msg.channel.name.includes('resgate-')) {
-        msg.channel.delete();
+    // COMANDO !SETLOJA
+    if (msg.content === '!setloja' && msg.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        setTimeout(() => msg.delete().catch(() => {}), 1000);
+        const embedLoja = new EmbedBuilder()
+            .setTitle("🏪 GT STORE - ATENDIMENTO")
+            .setDescription("Selecione uma opção para iniciar:")
+            .setColor("Blue");
+        
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('btn_compra').setLabel('Comprar Gift').setStyle(ButtonStyle.Primary).setEmoji('💳'),
+            new ButtonBuilder().setCustomId('btn_resgate').setLabel('Resgatar').setStyle(ButtonStyle.Success).setEmoji('✅'),
+            new ButtonBuilder().setCustomId('btn_suporte').setLabel('Suporte').setStyle(ButtonStyle.Danger).setEmoji('🎧')
+        );
+        msg.channel.send({ embeds: [embedLoja], components: [row] });
+    }
+
+    // COMANDO !FECHAR (LOGS HTML)
+    if (msg.content === '!fechar' && (msg.channel.name.includes('ticket-') || msg.channel.name.includes('resgate-'))) {
+        setTimeout(() => msg.delete().catch(() => {}), 500);
+        const mensagens = await msg.channel.messages.fetch();
+        let logHtml = `<html><body style="background:#1a1a1a; color:white; font-family:sans-serif; padding:20px;"><h1>Transcrição: ${msg.channel.name}</h1><hr>`;
+        
+        mensagens.reverse().forEach(m => {
+            const data = new Date(m.createdTimestamp).toLocaleString('pt-BR');
+            logHtml += `<p style="margin:10px 0; border-bottom:1px solid #333;">[${data}] <strong>${m.author.tag}:</strong> ${m.content}</p>`;
+        });
+        logHtml += `</body></html>`;
+
+        const attachment = new AttachmentBuilder(Buffer.from(logHtml), { name: `log-${msg.channel.name}.html` });
+        const canalLogs = client.channels.cache.get(configBot.canalLogs);
+        
+        if (canalLogs) await canalLogs.send({ content: `✅ Ticket **${msg.channel.name}** arquivado.`, files: [attachment] });
+        await msg.channel.send("🧹 **Canal fechando...**");
+        setTimeout(() => msg.channel.delete(), 5000);
     }
 });
 
@@ -106,68 +93,84 @@ client.on('messageCreate', async (msg) => {
 client.on('interactionCreate', async (i) => {
     if (!i.guild) return;
 
-    try {
-        if (i.customId === 'btn_loja_comprar') {
-            const menu = new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder().setCustomId('sel_compra').setPlaceholder('Escolha o valor').addOptions([
-                    { label: `R$ ${configBot.op1.toFixed(2)}`, value: `${configBot.op1}` },
-                    { label: `R$ ${configBot.op2.toFixed(2)}`, value: `${configBot.op2}` }
-                ])
-            );
-            await i.reply({ content: "Escolha o valor:", components: [menu], ephemeral: true });
+    // BOTÃO LIMPAR SALDO (ADMIN)
+    if (i.customId === 'admin_limpar_saldo') {
+        const modal = new ModalBuilder().setCustomId('mod_limpar_saldo').setTitle('Zerar Saldo de Usuário');
+        const input = new TextInputBuilder().setCustomId('txt_userid').setLabel('ID do Usuário:').setStyle(TextInputStyle.Short).setPlaceholder('Ex: 123456789...').setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await i.showModal(modal);
+    }
+
+    // MODAL SUBMITS
+    if (i.isModalSubmit()) {
+        if (i.customId === 'mod_limpar_saldo') {
+            const userId = i.fields.getTextInputValue('txt_userid');
+            carteiras[userId] = 0;
+            await i.reply({ content: `🧹 Saldo do usuário <@${userId}> foi zerado com sucesso!`, ephemeral: true });
+        }
+        
+        if (i.customId === 'mod_admin_nome') {
+            await client.user.setUsername(i.fields.getTextInputValue('txt_nome'));
+            await i.reply({ content: "✅ Nome atualizado!", ephemeral: true });
         }
 
-        if (i.customId === 'btn_loja_resgatar_gift') {
-            const modal = new ModalBuilder().setCustomId('mod_gift').setTitle('Resgatar');
-            const input = new TextInputBuilder().setCustomId('c').setLabel('Código:').setStyle(TextInputStyle.Short).setRequired(true);
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            await i.showModal(modal);
+        if (i.customId === 'mod_admin_gift') {
+            const valor = parseFloat(i.fields.getTextInputValue('txt_valor').replace(',', '.'));
+            const cod = `ADMIN-${Math.random().toString(36).toUpperCase().substring(2, 8)}`;
+            codigosGerados[cod] = valor;
+            await i.reply({ content: `🎁 **Gift Gerado!**\nCódigo: \`${cod}\` (R$ ${valor.toFixed(2)})`, ephemeral: false });
         }
+    }
 
-        if (i.isModalSubmit() && i.customId === 'mod_gift') {
-            const cod = i.fields.getTextInputValue('c').trim();
-            if (codigosGerados[cod]) {
-                const v = codigosGerados[cod];
-                carteiras[i.user.id] = (carteiras[i.user.id] || 0) + v;
-                delete codigosGerados[cod];
-                await i.reply({ content: `✅ R$ ${v.toFixed(2)} adicionados!`, ephemeral: true });
-            } else { await i.reply({ content: "❌ Inválido.", ephemeral: true }); }
+    // BOTÕES DE IDENTIDADE
+    if (i.customId === 'admin_nome') {
+        const modal = new ModalBuilder().setCustomId('mod_admin_nome').setTitle('Mudar Nome');
+        const input = new TextInputBuilder().setCustomId('txt_nome').setLabel('Novo Nome:').setStyle(TextInputStyle.Short).setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await i.showModal(modal);
+    }
+
+    if (i.customId === 'admin_gift') {
+        const modal = new ModalBuilder().setCustomId('mod_admin_gift').setTitle('Gerar Gift Manual');
+        const input = new TextInputBuilder().setCustomId('txt_valor').setLabel('Valor R$:').setStyle(TextInputStyle.Short).setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await i.showModal(modal);
+    }
+
+    // BOTÕES DA LOJA
+    if (i.customId === 'btn_suporte') {
+        const ticket = await i.guild.channels.create({
+            name: `ticket-suporte-${i.user.username}`,
+            type: ChannelType.GuildText,
+            parent: configBot.categoriaTickets,
+            permissionOverwrites: [
+                { id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+            ]
+        });
+        await i.reply({ content: `✅ Ticket aberto: ${ticket}`, ephemeral: true });
+        await ticket.send(`🎧 <@${i.user.id}>, diga como podemos ajudar. Digite \`!fechar\` para encerrar.`);
+    }
+
+    if (i.customId === 'btn_resgate') {
+        const modal = new ModalBuilder().setCustomId('mod_resgate_cliente').setTitle('Resgatar Código');
+        const input = new TextInputBuilder().setCustomId('txt_cod').setLabel('Insira seu código:').setStyle(TextInputStyle.Short).setRequired(true);
+        modal.addComponents(new ActionRowBuilder().addComponents(input));
+        await i.showModal(modal);
+    }
+
+    if (i.isModalSubmit() && i.customId === 'mod_resgate_cliente') {
+        const cod = i.fields.getTextInputValue('txt_cod').trim();
+        if (codigosGerados[cod]) {
+            const v = codigosGerados[cod];
+            carteiras[i.user.id] = (carteiras[i.user.id] || 0) + v;
+            delete codigosGerados[cod];
+            await i.reply({ content: `✅ Sucesso! R$ ${v.toFixed(2)} adicionados à sua carteira.`, ephemeral: true });
+        } else {
+            await i.reply({ content: "❌ Código inválido ou já utilizado.", ephemeral: true });
         }
-
-        if (i.customId === 'btn_loja_resgatar_pass') {
-            const saldo = carteiras[i.user.id] || 0;
-            if (saldo < configBot.valorPass) return i.reply({ content: "Saldo insuficiente.", ephemeral: true });
-
-            const ticket = await i.guild.channels.create({
-                name: `resgate-${i.user.username}`,
-                type: ChannelType.GuildText,
-                parent: configBot.categoriaTickets,
-                permissionOverwrites: [{ id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] }, { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }]
-            });
-            await i.reply({ content: `✅ Ticket: ${ticket}`, ephemeral: true });
-            await ticket.send(`Olá <@${i.user.id}>! Digite o **UID** do jogador:`);
-
-            const col = ticket.createMessageCollector({ filter: m => m.author.id === i.user.id, max: 1 });
-            col.on('collect', async (m) => {
-                const uid = m.content.trim();
-                try {
-                    const p = await axios.get(`https://lhubapi.shardweb.app/player?uid=${uid}`);
-                    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`conf_${uid}`).setLabel('Confirmar').setStyle(ButtonStyle.Success));
-                    await ticket.send({ content: `👤 Nick: **${p.data.nickname}**\nConfirma o envio?`, components: [row] });
-                } catch { ticket.send("❌ UID inválido."); }
-            });
-        }
-
-        if (i.customId && i.customId.startsWith('conf_')) {
-            const uid = i.customId.split('_')[1];
-            await i.update({ content: "⏳ Enviando...", components: [] });
-            try {
-                await axios.post(`https://lhubff.com.br/api/v1/passe`, { uid }, { headers: { 'Authorization': `Bearer ${process.env.LHUB_API_KEY}` } });
-                carteiras[i.user.id] -= configBot.valorPass;
-                await i.followUp("✅ **Sucesso!** Mande o PRINT e use `!limpar`.");
-            } catch { await i.followUp("❌ Erro LHub."); }
-        }
-    } catch (e) { console.error(e); }
+    }
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
